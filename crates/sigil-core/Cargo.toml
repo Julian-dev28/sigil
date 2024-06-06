@@ -1,0 +1,28 @@
+[package]
+name = "sigil-core"
+description = "Core Verifiable Credentials, DID and cryptography library for Sigil"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+base64 = { workspace = true }
+
+ed25519-dalek = { version = "2", features = ["pkcs8", "rand_core"] }
+pkcs8 = { version = "0.10", features = ["alloc"] }
+rand = "0.8"
+rand_core = "0.6"
+jsonwebtoken = "9"
+bs58 = "0.5"
+flate2 = "1"
+
+[dev-dependencies]
+serde_json = { workspace = true }
