@@ -1,0 +1,65 @@
+# Local, self-contained Sigil stack: Postgres + API server + web UI.
+# Usage: `docker compose up --build` then open http://localhost:5173
+name: sigil
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: sigil
+      POSTGRES_PASSWORD: sigil
+      POSTGRES_DB: sigil
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sigil -d sigil"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://sigil:sigil@db:5432/sigil
+      SIGIL_BIND: 0.0.0.0:8080
+      SIGIL_ISSUER_HOST: localhost:8080
+      # Provide a stable issuer key in real deployments via this variable
+      # (base64 PKCS#8 DER). Left unset here so the server self-generates one
+      # on startup for local development.
+      # SIGIL_ISSUER_KEY_PKCS8_B64: ""
+      RUST_LOG: info,sigil_server=debug
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        # The browser talks to the server via the host-published port.
+        VITE_API_URL: http://localhost:8080
+    ports:
+      - "5173:8080"
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+    driver: local

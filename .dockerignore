@@ -1,0 +1,16 @@
+target/
+**/target/
+web/node_modules/
+web/dist/
+node_modules/
+.git/
+.github/
+infra/
+*.md
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+issuer_key*.der
+.DS_Store
