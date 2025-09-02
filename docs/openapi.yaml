@@ -1,0 +1,525 @@
+openapi: 3.1.0
+info:
+  title: Sigil API
+  version: 0.5.0
+  summary: Issue, verify, and manage W3C Verifiable Credentials.
+  description: |
+    HTTP API for the Sigil Verifiable Credentials platform. Credentials are
+    encoded as JWT-VCs signed with Ed25519 (EdDSA), revoked via StatusList2021,
+    and issued from a did:web issuer. Subjects are identified with did:key.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+  contact:
+    name: Sigil contributors
+    url: https://github.com/sigil-id/sigil
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: system
+    description: Health and discovery endpoints.
+  - name: credentials
+    description: Credential issuance, verification, and lifecycle.
+  - name: status
+    description: StatusList2021 revocation lists.
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Liveness probe
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /.well-known/did.json:
+    get:
+      tags: [system]
+      summary: Issuer did:web DID document
+      operationId: getDidDocument
+      responses:
+        "200":
+          description: DID document for the issuer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DidDocument"
+
+  /.well-known/openid-credential-issuer:
+    get:
+      tags: [system]
+      summary: OID4VCI issuer metadata
+      operationId: getIssuerMetadata
+      responses:
+        "200":
+          description: OpenID for Verifiable Credential Issuance metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuerMetadata"
+
+  /api/v1/credentials/issue:
+    post:
+      tags: [credentials]
+      summary: Issue a new JWT-VC
+      operationId: issueCredential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueRequest"
+      responses:
+        "201":
+          description: Credential issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/credentials/verify:
+    post:
+      tags: [credentials]
+      summary: Verify a JWT-VC
+      operationId: verifyCredential
+      description: |
+        Checks signature, expiry, and revocation. The individual checks are
+        reported separately so callers may apply their own policy; `valid` is
+        their conjunction.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyRequest"
+      responses:
+        "200":
+          description: Verification result. Returned for both valid and invalid credentials.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/credentials:
+    get:
+      tags: [credentials]
+      summary: List issued credentials
+      operationId: listCredentials
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: A page of credential summaries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/credentials/{id}:
+    get:
+      tags: [credentials]
+      summary: Fetch a stored credential record
+      operationId: getCredential
+      parameters:
+        - $ref: "#/components/parameters/CredentialId"
+      responses:
+        "200":
+          description: The stored credential record, including its JWT.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialRecord"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/credentials/{id}/revoke:
+    post:
+      tags: [credentials]
+      summary: Revoke a credential
+      operationId: revokeCredential
+      parameters:
+        - $ref: "#/components/parameters/CredentialId"
+      responses:
+        "200":
+          description: Credential revoked (idempotent).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevokeResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/status/{listId}:
+    get:
+      tags: [status]
+      summary: StatusList2021 credential
+      operationId: getStatusList
+      description: Returns the StatusList2021 credential as a JWT-VC.
+      parameters:
+        - name: listId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: The status list credential (compact JWT-VC).
+          content:
+            application/jwt:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  parameters:
+    CredentialId:
+      name: id
+      in: path
+      required: true
+      description: Credential identifier (`urn:uuid:<uuid>`).
+      schema:
+        type: string
+        example: "urn:uuid:6f9d2a7c-2b4e-4c9f-9b3d-2a1e5c8f0a11"
+
+  responses:
+    BadRequest:
+      description: The request was malformed or failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          example:
+            error:
+              code: invalid_request
+              message: "subjectId is not a valid DID"
+    NotFound:
+      description: The referenced resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          example:
+            error:
+              code: not_found
+              message: "credential not found"
+    InternalError:
+      description: An unexpected server error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          example:
+            error:
+              code: internal
+              message: "internal error"
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [invalid_request, not_found, verification_failed, internal]
+            message:
+              type: string
+
+    CredentialStatus:
+      type: object
+      description: StatusList2021Entry linking a credential to a revocation bit.
+      required: [id, type, statusPurpose, statusListIndex, statusListCredential]
+      properties:
+        id:
+          type: string
+          format: uri
+        type:
+          type: string
+          const: StatusList2021Entry
+        statusPurpose:
+          type: string
+          enum: [revocation, suspension]
+        statusListIndex:
+          type: string
+        statusListCredential:
+          type: string
+          format: uri
+
+    VerifiableCredential:
+      type: object
+      description: W3C Verifiable Credential (Data Model 1.1).
+      required:
+        - "@context"
+        - id
+        - type
+        - issuer
+        - issuanceDate
+        - credentialSubject
+      properties:
+        "@context":
+          type: array
+          items:
+            type: string
+          example: ["https://www.w3.org/2018/credentials/v1"]
+        id:
+          type: string
+          format: uri
+          example: "urn:uuid:6f9d2a7c-2b4e-4c9f-9b3d-2a1e5c8f0a11"
+        type:
+          type: array
+          items:
+            type: string
+          example: ["VerifiableCredential", "EmploymentCredential"]
+        issuer:
+          type: string
+          example: "did:web:issuer.example"
+        issuanceDate:
+          type: string
+          format: date-time
+        expirationDate:
+          type: string
+          format: date-time
+        credentialStatus:
+          $ref: "#/components/schemas/CredentialStatus"
+        credentialSubject:
+          type: object
+          description: Claims about the subject; MUST include an `id`.
+          required: [id]
+          properties:
+            id:
+              type: string
+              example: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+          additionalProperties: true
+
+    IssueRequest:
+      type: object
+      required: [subjectId, type, claims]
+      properties:
+        subjectId:
+          type: string
+          description: Subject DID (typically did:key).
+          example: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+        type:
+          type: string
+          description: The additional credential type appended to VerifiableCredential.
+          example: EmploymentCredential
+        claims:
+          type: object
+          description: Arbitrary claims placed under credentialSubject.
+          additionalProperties: true
+          example:
+            role: Staff Engineer
+            employer: Acme Corp
+        expiresInDays:
+          type: integer
+          minimum: 1
+          default: 365
+          description: Validity window in days from issuance.
+
+    IssueResponse:
+      type: object
+      required: [id, jwt, credential]
+      properties:
+        id:
+          type: string
+          format: uri
+        jwt:
+          type: string
+          description: Compact JWT-VC (EdDSA).
+        credential:
+          $ref: "#/components/schemas/VerifiableCredential"
+
+    VerifyRequest:
+      type: object
+      required: [jwt]
+      properties:
+        jwt:
+          type: string
+          description: Compact JWT-VC to verify.
+
+    VerifyChecks:
+      type: object
+      required: [signature, notExpired, notRevoked]
+      properties:
+        signature:
+          type: boolean
+        notExpired:
+          type: boolean
+        notRevoked:
+          type: boolean
+
+    VerifyResponse:
+      type: object
+      required: [valid, checks]
+      properties:
+        valid:
+          type: boolean
+          description: Conjunction of all individual checks.
+        checks:
+          $ref: "#/components/schemas/VerifyChecks"
+        issuer:
+          type: string
+          example: "did:web:issuer.example"
+        subject:
+          type: string
+          example: "did:key:z6Mkha..."
+        credential:
+          $ref: "#/components/schemas/VerifiableCredential"
+
+    CredentialSummary:
+      type: object
+      required: [id, type, subjectId, issuedAt, revoked]
+      properties:
+        id:
+          type: string
+          format: uri
+        type:
+          type: string
+        subjectId:
+          type: string
+        issuedAt:
+          type: string
+          format: date-time
+        revoked:
+          type: boolean
+
+    CredentialList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialSummary"
+        total:
+          type: integer
+
+    CredentialRecord:
+      type: object
+      required: [id, type, subjectId, jwt, credential, revoked, issuedAt]
+      properties:
+        id:
+          type: string
+          format: uri
+        type:
+          type: string
+        subjectId:
+          type: string
+        jwt:
+          type: string
+        credential:
+          $ref: "#/components/schemas/VerifiableCredential"
+        revoked:
+          type: boolean
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+
+    RevokeResponse:
+      type: object
+      required: [id, revoked]
+      properties:
+        id:
+          type: string
+          format: uri
+        revoked:
+          type: boolean
+          const: true
+
+    DidDocument:
+      type: object
+      description: A W3C DID document (did:web).
+      required: ["@context", id, verificationMethod]
+      properties:
+        "@context":
+          type: array
+          items:
+            type: string
+        id:
+          type: string
+          example: "did:web:issuer.example"
+        verificationMethod:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+                example: Ed25519VerificationKey2020
+              controller:
+                type: string
+              publicKeyMultibase:
+                type: string
+        assertionMethod:
+          type: array
+          items:
+            type: string
+        authentication:
+          type: array
+          items:
+            type: string
+
+    IssuerMetadata:
+      type: object
+      description: OpenID for Verifiable Credential Issuance metadata.
+      required: [credential_issuer, credential_endpoint]
+      properties:
+        credential_issuer:
+          type: string
+          format: uri
+        credential_endpoint:
+          type: string
+          format: uri
+        credential_configurations_supported:
+          type: object
+          additionalProperties: true

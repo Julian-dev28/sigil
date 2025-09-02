@@ -1,6 +1,6 @@
 {
   "name": "sigil-web",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Sigil web app — issue, hold, and verify W3C Verifiable Credentials.",
   "license": "Apache-2.0",
